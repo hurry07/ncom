@@ -1,2 +1,10 @@
-node_modules/
-
+*.iml
+*.ipr
+*.iws
+.idea/
+node_modules
+package-lock.json
+.DS_Store
+config.json
+temp
+logs
