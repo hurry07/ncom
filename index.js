@@ -4,13 +4,21 @@ var crypto = require('crypto');
 var formatter = require('sc-formatter');
 var EventEmitter = require('events').EventEmitter;
 
+// --------------------------
+// ComSocket
+// --------------------------
+/**
+ * @param options 可以使用现有的 socket 建立连接, 可以指定参数新建连接
+ * @param id
+ * @constructor
+ */
 var ComSocket = function (options, id) {
   var self = this;
 
   var dataInboundBuffer = '';
   var dataOutboundBuffer = '';
   var endSymbol = '\u0017';
-  var endSymbolRegex = new RegExp(endSymbol, 'g');
+  var endSymbolRegex = new RegExp(endSymbol, 'g'); // 每个消息通过 u0017 分开
   var flushOutTimeout = null;
 
   self.id = id;
@@ -28,17 +36,24 @@ var ComSocket = function (options, id) {
     self.emit('error', err);
   });
 
+  /**
+   * 如果给定 socket 连接, 那么可能需要手动开始连接
+   */
   self.connect = function () {
     self.socket.connect.apply(self.socket, arguments);
   };
 
+  /**
+   * endSymbol 是分隔符, 每个消息结束时都尾随分隔符, 所以 split 方法 length - 1 元素应该是 [].
+   * 如果有消息没有接受成功, length - 1 保存消息片段直到接收到 endSymbol 为止
+   */
   self.socket.on('data', function (data) {
     dataInboundBuffer += data.toString();
     var messages = dataInboundBuffer.split(endSymbol);
     var num = messages.length - 1;
     dataInboundBuffer = messages[num];
 
-    for (var i=0; i<num; i++) {
+    for (var i = 0; i < num; i++) {
       self.socket.emit('message', formatter.decode(messages[i]));
     }
   });
@@ -51,8 +66,13 @@ var ComSocket = function (options, id) {
     self.connected = false;
   });
 
+  /**
+   * 注册事件监听者, 如果是 error 事件, 注册到自身上, 其余注册到 socket 上.
+   * @param event
+   * @param callback
+   */
   self.on = function (event, callback) {
-    if (event == 'error') {
+    if (event === 'error') {
       EventEmitter.prototype.on.call(self, event, callback);
     } else {
       self.socket.on(event, callback);
@@ -77,18 +97,26 @@ var ComSocket = function (options, id) {
     flushOutTimeout = null;
   };
 
+  /**
+   * 写入数据
+   * @param data
+   * @param writeOptions
+   */
   self.write = function (data, writeOptions) {
     var str, formatError;
     writeOptions = writeOptions || {};
 
     var filters = writeOptions.filters;
 
+    // 如果编码出现问题
     try {
       str = formatter.encode(data).replace(endSymbolRegex, '');
     } catch (err) {
       formatError = err;
       self.emit('error', formatError);
     }
+
+    // 通过 filters
     if (!formatError) {
       if (filters) {
         var len = filters.length;
@@ -96,6 +124,8 @@ var ComSocket = function (options, id) {
           str = filters[i](str);
         }
       }
+
+      // 批量发送, 等待 batchDuration, 然后把积累的消息一起发送.
       if (writeOptions.batch) {
         dataOutboundBuffer += str + endSymbol;
         if (!flushOutTimeout) {
@@ -107,10 +137,17 @@ var ComSocket = function (options, id) {
     }
   };
 
+  /**
+   * Half-closes the socket. i.e., it sends a FIN packet. It is possible the server will still send some data.
+   */
   self.end = function () {
     self.socket.end();
   };
 
+  /**
+   * Ensures that no more I/O activity happens on this socket. Only necessary in case of errors (parse error or so).
+   * 立即停止
+   */
   self.destroy = function () {
     self.socket.destroy();
   };
@@ -118,6 +155,9 @@ var ComSocket = function (options, id) {
 
 ComSocket.prototype = Object.create(EventEmitter.prototype);
 
+// --------------------------
+// ComServer
+// --------------------------
 var ComServer = function (options) {
   var self = this;
 
@@ -153,10 +193,13 @@ var ComServer = function (options) {
 
   server.on('connection', function (socket) {
     var tempBuffer = [];
+
+    // 缓冲接受到的数据
     var bufferData = function (data) {
       tempBuffer.push(data.toString());
     };
     socket.on('data', bufferData);
+
     generateId(function (id) {
       socket.removeListener('data', bufferData);
       var comSocket = new ComSocket(socket, id);
@@ -169,8 +212,9 @@ var ComServer = function (options) {
     });
   });
 
+  // connection, error 事件绑定到 ComServer 对象, 其余事件绑定到 socket.
   self.on = function (event, callback) {
-    if (event == 'connection' || event == 'error') {
+    if (event === 'connection' || event === 'error') {
       EventEmitter.prototype.on.call(self, event, callback);
     } else {
       server.on(event, callback);
