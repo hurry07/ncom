@@ -176,6 +176,11 @@ var ComServer = function (options) {
 
   var idTrailer = 0;
 
+  /**
+   * 产生唯一id
+   * @param callback
+   * @return {*}
+   */
   var generateId = function (callback) {
     return crypto.randomBytes(32, function (err, buffer) {
       if (err) {
@@ -191,10 +196,13 @@ var ComServer = function (options) {
     server.listen.apply(server, arguments);
   };
 
+  /**
+   * 接受到 data 西欧阿西, 饭后
+   */
   server.on('connection', function (socket) {
     var tempBuffer = [];
 
-    // 缓冲接受到的数据
+    // 缓冲接受到的数据, 分割后再次抛出
     var bufferData = function (data) {
       tempBuffer.push(data.toString());
     };
